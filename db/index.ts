@@ -5,6 +5,9 @@ export type FreshKeepEnv = {
   PHOTOS: R2Bucket;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
+  VISION_PROVIDER?: string;
+  OPENROUTER_API_KEY?: string;
+  OPENROUTER_MODEL?: string;
   RESEND_API_KEY?: string;
   REMINDER_FROM?: string;
   REMINDER_CRON_SECRET?: string;

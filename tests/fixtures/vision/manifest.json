@@ -1,0 +1,18 @@
+[
+  { "id": "01-clear-expiry-numeric", "kind": "clear", "date": "2027-12-31", "dateType": "expiry" },
+  { "id": "02-clear-use-by-numeric", "kind": "clear", "date": "2027-11-30", "dateType": "use_by" },
+  { "id": "03-clear-best-before-numeric", "kind": "clear", "date": "2028-08-24", "dateType": "best_before" },
+  { "id": "04-clear-iso", "kind": "clear", "date": "2027-09-29", "dateType": "expiry" },
+  { "id": "05-clear-full-month", "kind": "clear", "date": "2027-10-25", "dateType": "best_before" },
+  { "id": "06-clear-short-month", "kind": "clear", "date": "2028-01-23", "dateType": "use_by" },
+  { "id": "07-ambiguous-slash-long-year", "kind": "unsafe" },
+  { "id": "08-ambiguous-slash-short-year", "kind": "unsafe" },
+  { "id": "09-ambiguous-dash", "kind": "unsafe" },
+  { "id": "10-ambiguous-dot", "kind": "unsafe" },
+  { "id": "11-multiple-packed-expiry", "kind": "unsafe" },
+  { "id": "12-multiple-made-best-before", "kind": "unsafe" },
+  { "id": "13-blurred", "kind": "unsafe" },
+  { "id": "14-obscured", "kind": "unsafe" },
+  { "id": "15-invalid", "kind": "unsafe" },
+  { "id": "16-missing", "kind": "unsafe" }
+]
