@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { AddItemFlow, ItemFields, type DateType } from "./AddItemFlow";
 import type { ChatGPTUser } from "./chatgpt-auth";
 
 type Item = {
@@ -31,25 +32,6 @@ type Bootstrap = {
   household?: { id: string; name: string; timezone: string; role: "owner" | "member" };
   items?: Item[];
   members?: Member[];
-};
-
-type DateType = "expiry" | "best_before" | "use_by" | "unknown";
-type ScanResult = {
-  itemName: string;
-  date: string | null;
-  dateType: DateType;
-  rawDateText: string | null;
-  dateStatus: "confident" | "ambiguous" | "unreadable";
-  warnings: string[];
-};
-
-const EMPTY_FORM = {
-  name: "",
-  itemDate: "",
-  dateType: "unknown" as DateType,
-  location: "fridge" as "fridge" | "pantry",
-  quantity: 1,
-  notes: "",
 };
 
 export function FreshKeepApp({ signedInUser }: { signedInUser: ChatGPTUser }) {
@@ -265,59 +247,14 @@ function EmptyInventory({ archived, onAdd }: { archived: boolean; onAdd: () => v
 
 function AddItemDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [step, setStep] = useState<"photos" | "confirm">("photos");
-  const [itemPhoto, setItemPhoto] = useState<File | null>(null);
-  const [datePhoto, setDatePhoto] = useState<File | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [scan, setScan] = useState<ScanResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const dateRef = useRef<HTMLInputElement>(null);
-
-  async function analyze() {
-    if (!itemPhoto || !datePhoto) return setError("Take both photos before continuing.");
-    setBusy(true); setError("");
-    const [preparedItem, preparedDate] = await Promise.all([prepareImage(itemPhoto), prepareImage(datePhoto)]);
-    setItemPhoto(preparedItem); setDatePhoto(preparedDate);
-    const body = new FormData(); body.set("itemPhoto", preparedItem); body.set("datePhoto", preparedDate);
-    try {
-      const response = await fetch("/api/analyze", { method: "POST", body });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "The photos could not be read.");
-      const result = payload.result as ScanResult; setScan(result);
-      setForm({ ...EMPTY_FORM, name: result.itemName, itemDate: result.date ?? "", dateType: result.dateType });
-      setStep("confirm");
-      if (result.dateStatus !== "confident") setTimeout(() => dateRef.current?.focus(), 50);
-    } catch (reason) {
-      setScan({ itemName: "", date: null, dateType: "unknown", rawDateText: null, dateStatus: "unreadable", warnings: [reason instanceof Error ? reason.message : "Enter the details manually."] });
-      setForm(EMPTY_FORM); setStep("confirm"); setTimeout(() => dateRef.current?.focus(), 50);
-    } finally { setBusy(false); }
-  }
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    if (!itemPhoto) return setError("The item photo is required.");
-    setBusy(true); setError("");
-    const body = new FormData(); body.set("photo", itemPhoto);
-    Object.entries(form).forEach(([key, value]) => body.set(key, String(value)));
-    const response = await fetch("/api/items", { method: "POST", body });
-    const payload = await response.json().catch(() => ({})); setBusy(false);
-    if (!response.ok) return setError(payload.error ?? "The item could not be saved.");
-    onSaved();
-  }
-
-  return <Dialog title={step === "photos" ? "Add a perishable" : "Confirm the details"} onClose={onClose}>
-    {step === "photos" ? <div className="photo-step"><p className="dialog-intro">Two quick photos help FreshKeep identify the item and read its date.</p><div className="photo-grid"><PhotoInput label="1. Item photo" hint="Show the front of the package" file={itemPhoto} onFile={setItemPhoto} /><PhotoInput label="2. Date photo" hint="Fill the frame with the printed date" file={datePhoto} onFile={setDatePhoto} /></div>{error && <p className="form-error">{error}</p>}<div className="dialog-actions split"><button className="secondary-button" onClick={() => { setStep("confirm"); setScan({ itemName: "", date: null, dateType: "unknown", rawDateText: null, dateStatus: "unreadable", warnings: ["Manual entry selected."] }); }}>Enter manually</button><button className="primary-button" onClick={analyze} disabled={busy || !itemPhoto || !datePhoto}>{busy ? "Reading photos…" : "Read photos"}</button></div><p className="privacy-note">The date photo is read once and never saved.</p></div> : <form className="confirm-form" onSubmit={save}>{scan && scan.dateStatus !== "confident" && <div className="scan-warning"><strong>Please enter the date manually.</strong><span>{scan.warnings[0] ?? "The printed date was not clear enough."}</span></div>}{scan?.rawDateText && <p className="raw-date">Visible text: “{scan.rawDateText}”</p>}<ItemFields form={form} setForm={setForm} dateRef={dateRef} />{error && <p className="form-error">{error}</p>}<div className="dialog-actions split"><button type="button" className="secondary-button" onClick={() => setStep("photos")}>Back</button><button className="primary-button" disabled={busy || !form.name || !form.itemDate}>{busy ? "Saving…" : "Add to inventory"}</button></div></form>}
-  </Dialog>;
-}
-
-function PhotoInput({ label, hint, file, onFile }: { label: string; hint: string; file: File | null; onFile: (file: File) => void }) {
-  const preview = useMemo(() => file ? URL.createObjectURL(file) : "", [file]);
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
-  return <label className={`photo-input ${file ? "has-photo" : ""}`}>{preview ? /* Blob previews cannot use the server image optimizer. */ <img src={preview} alt="Selected preview" /> : <span className="camera-mark" aria-hidden="true">◎</span>}<strong>{file ? "Retake photo" : label}</strong><small>{file ? file.name : hint}</small><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { const selected = event.target.files?.[0]; if (selected) onFile(selected); }} /></label>;
-}
-
-function ItemFields({ form, setForm, dateRef }: { form: typeof EMPTY_FORM; setForm: (form: typeof EMPTY_FORM) => void; dateRef?: React.RefObject<HTMLInputElement | null> }) {
-  return <div className="field-grid"><label className="span-2">Item name<input required value={form.name} maxLength={100} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label>Date<input ref={dateRef} required type="date" value={form.itemDate} onChange={(event) => setForm({ ...form, itemDate: event.target.value })} /></label><label>Date label<select value={form.dateType} onChange={(event) => setForm({ ...form, dateType: event.target.value as DateType })}><option value="expiry">Expiry</option><option value="best_before">Best before</option><option value="use_by">Use by</option><option value="unknown">Date shown</option></select></label><fieldset className="span-2"><legend>Stored in</legend><div className="choice-row"><button type="button" className={form.location === "fridge" ? "selected" : ""} onClick={() => setForm({ ...form, location: "fridge" })}>❄ Fridge</button><button type="button" className={form.location === "pantry" ? "selected" : ""} onClick={() => setForm({ ...form, location: "pantry" })}>⌂ Pantry</button></div></fieldset><label>Quantity<input type="number" min={1} max={99} value={form.quantity} onChange={(event) => setForm({ ...form, quantity: Number(event.target.value) })} /></label><label className="span-2">Notes <span>optional</span><textarea maxLength={500} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Opened on Monday, top shelf…" /></label></div>;
+  return (
+    <Dialog
+      title={step === "photos" ? "Add a perishable" : "Confirm the details"}
+      onClose={onClose}
+    >
+      <AddItemFlow onSaved={onSaved} onStepChange={setStep} />
+    </Dialog>
+  );
 }
 
 function EditItemDialog({ item, onClose, onSaved }: { item: Item; onClose: () => void; onSaved: () => void }) {
@@ -330,9 +267,28 @@ function EditItemDialog({ item, onClose, onSaved }: { item: Item; onClose: () =>
 
 function HouseholdDialog({ household, members, onClose, onChanged }: { household: NonNullable<Bootstrap["household"]>; members: Member[]; onClose: () => void; onChanged: () => void }) {
   const [email, setEmail] = useState(""); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
+  const [sharing, setSharing] = useState(false); const [addLink, setAddLink] = useState("");
   async function invite(event: FormEvent) { event.preventDefault(); setBusy(true); setMessage(""); const response = await fetch("/api/members", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) }); const payload = await response.json().catch(() => ({})); setBusy(false); if (!response.ok) return setMessage(payload.error ?? "Could not add the invitation."); setEmail(""); setMessage(payload.emailSent ? "Invitation sent." : "Invitation saved. Email delivery will begin once Resend is configured."); await onChanged(); }
   async function remove(id: string) { const response = await fetch(`/api/members/${id}`, { method: "DELETE" }); if (response.ok) await onChanged(); }
-  return <Dialog title={household.name} onClose={onClose}><div className="household-panel"><p className="dialog-intro">Everyone here can update the shared inventory and receives expiry digests.</p><div className="member-list">{members.map((member) => <div className="member-row" key={member.id}><span className="member-avatar">{initials(member.displayName ?? member.email)}</span><div><strong>{member.displayName ?? member.email.split("@")[0]}</strong><small>{member.email} · {member.status}</small></div><span className="role-pill">{member.role}</span>{household.role === "owner" && member.role !== "owner" && <button className="icon-button" aria-label={`Remove ${member.email}`} onClick={() => remove(member.id)}>×</button>}</div>)}</div>{household.role === "owner" && <form className="invite-form" onSubmit={invite}><label>Invite by email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="housemate@example.com" /></label><button className="primary-button" disabled={busy}>{busy ? "Adding…" : "Invite member"}</button></form>}{message && <p className="form-message">{message}</p>}<p className="privacy-note">Household timezone: {household.timezone}</p></div></Dialog>;
+  async function shareAddLink() {
+    setSharing(true); setMessage("");
+    try {
+      const response = await fetch("/api/contribution-link", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Could not create the add link.");
+      const link = payload.link as string; setAddLink(link);
+      if (navigator.share) {
+        try { await navigator.share({ title: `Add to ${household.name}`, text: "Add a perishable to our FreshKeep inventory — no login needed.", url: link }); }
+        catch (reason) { if (!(reason instanceof DOMException && reason.name === "AbortError")) throw reason; }
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(link); setMessage("Private add link copied.");
+      } else {
+        setMessage("The private add link is ready below.");
+      }
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Could not share the add link."); }
+    finally { setSharing(false); }
+  }
+  return <Dialog title={household.name} onClose={onClose}><div className="household-panel"><p className="dialog-intro">Everyone here can update the shared inventory and receives expiry digests.</p>{household.role === "owner" && <section className="share-add-panel"><div><strong>No-login add link</strong><p>Anyone with this permanent private link can add an item, but cannot see your inventory.</p></div><button type="button" className="secondary-button" onClick={shareAddLink} disabled={sharing}>{sharing ? "Preparing…" : "Share add link"}</button>{addLink && <label className="share-link-field">Permanent link<input readOnly value={addLink} onFocus={(event) => event.currentTarget.select()} /></label>}</section>}<div className="member-list">{members.map((member) => <div className="member-row" key={member.id}><span className="member-avatar">{initials(member.displayName ?? member.email)}</span><div><strong>{member.displayName ?? member.email.split("@")[0]}</strong><small>{member.email} · {member.status}</small></div><span className="role-pill">{member.role}</span>{household.role === "owner" && member.role !== "owner" && <button className="icon-button" aria-label={`Remove ${member.email}`} onClick={() => remove(member.id)}>×</button>}</div>)}</div>{household.role === "owner" && <form className="invite-form" onSubmit={invite}><label>Invite by email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="housemate@example.com" /></label><button className="primary-button" disabled={busy}>{busy ? "Adding…" : "Invite member"}</button></form>}{message && <p className="form-message">{message}</p>}<p className="privacy-note">Household timezone: {household.timezone}</p></div></Dialog>;
 }
 
 function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -355,18 +311,6 @@ function Dialog({ title, onClose, children }: { title: string; onClose: () => vo
     return () => { window.removeEventListener("keydown", handler); previouslyFocused?.focus(); };
   }, [onClose]);
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header><div><p className="eyebrow">FreshKeep</p><h2 id="dialog-title">{title}</h2></div><button ref={closeRef} className="close-button" onClick={onClose} aria-label="Close">×</button></header>{children}</section></div>;
-}
-
-async function prepareImage(file: File): Promise<File> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas"); canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
-    const context = canvas.getContext("2d"); if (!context) return file;
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
-    return blob ? new File([blob], "freshkeep-photo.jpg", { type: "image/jpeg" }) : file;
-  } catch { return file; }
 }
 
 async function fetchBootstrap(signal?: AbortSignal): Promise<Bootstrap> {

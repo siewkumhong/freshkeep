@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const households = sqliteTable("households", {
   id: text("id").primaryKey(),
@@ -90,4 +90,17 @@ export const reminderDeliveries = sqliteTable(
       table.reminderOn,
     ),
   ],
+);
+
+export const anonymousUploadUsage = sqliteTable(
+  "anonymous_upload_usage",
+  {
+    householdId: text("household_id")
+      .notNull()
+      .references(() => households.id, { onDelete: "cascade" }),
+    usageDate: text("usage_date").notNull(),
+    analysisCount: integer("analysis_count").notNull().default(0),
+    saveCount: integer("save_count").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.householdId, table.usageDate] })],
 );

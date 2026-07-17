@@ -1,6 +1,11 @@
 import { getDatabase, getPhotoBucket } from "@/db";
 import { isIsoDate, subtractCalendarMonth } from "@/lib/date";
-import { apiError, newId, requireMembership } from "@/lib/server";
+import {
+  consumeAnonymousQuota,
+  requireSameOrigin,
+  requireUploadAccess,
+} from "@/lib/contribution";
+import { apiError, newId } from "@/lib/server";
 
 const LOCATIONS = new Set(["fridge", "pantry"]);
 const DATE_TYPES = new Set(["expiry", "best_before", "use_by", "unknown"]);
@@ -8,7 +13,8 @@ const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: Request) {
   try {
-    const { user, membership } = await requireMembership();
+    requireSameOrigin(request);
+    const access = await requireUploadAccess(request);
     const form = await request.formData();
     const name = stringValue(form, "name").trim();
     const itemDate = stringValue(form, "itemDate");
@@ -29,13 +35,14 @@ export async function POST(request: Request) {
     if (!(photo instanceof File) || !PHOTO_TYPES.has(photo.type) || photo.size > 6 * 1024 * 1024) {
       return bad("Add a JPEG, PNG, or WebP item photo smaller than 6 MB.");
     }
+    await consumeAnonymousQuota(access, "save");
 
     const itemId = newId("item");
-    const photoKey = `${membership.householdId}/${itemId}`;
+    const photoKey = `${access.householdId}/${itemId}`;
     const bucket = getPhotoBucket();
     await bucket.put(photoKey, await photo.arrayBuffer(), {
       httpMetadata: { contentType: photo.type, cacheControl: "private, max-age=3600" },
-      customMetadata: { householdId: membership.householdId, itemId },
+      customMetadata: { householdId: access.householdId, itemId },
     });
 
     try {
@@ -49,8 +56,8 @@ export async function POST(request: Request) {
         )
         .bind(
           itemId,
-          membership.householdId,
-          user.email,
+          access.householdId,
+          access.createdBy,
           name,
           quantity,
           location,

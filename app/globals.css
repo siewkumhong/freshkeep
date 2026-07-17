@@ -160,6 +160,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .member-row small { color: var(--muted); font-size: 11px; margin-top: 2px; }
 .role-pill { background: var(--sage-pale); color: var(--sage); padding: 5px 8px; border-radius: 99px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
 .invite-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; margin-top: 20px; }
+.share-add-panel { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px 18px; align-items: center; background: var(--sage-pale); border: 1px solid rgba(47,89,70,.12); border-radius: 16px; padding: 16px; margin-bottom: 20px; }
+.share-add-panel strong { color: var(--sage); }
+.share-add-panel p { color: var(--muted); font-size: 13px; line-height: 1.45; margin: 4px 0 0; }
+.share-link-field { grid-column: 1 / -1; display: grid; gap: 6px; color: var(--sage); font-size: 11px; font-weight: 800; }
+.share-link-field input { width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; background: white; padding: 8px 10px; color: var(--muted); font-size: 12px; }
+
+.anonymous-add-shell { min-height: 100vh; padding: 18px 20px 64px; position: relative; overflow: hidden; }
+.anonymous-add-shell::before { content: ""; position: fixed; width: 460px; height: 460px; border-radius: 44% 56% 64% 36%; background: var(--sage-soft); top: -270px; right: -170px; transform: rotate(22deg); z-index: -1; }
+.anonymous-add-header { max-width: 760px; min-height: 58px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.private-link-pill { background: var(--sage-pale); color: var(--sage); border: 1px solid rgba(47,89,70,.12); border-radius: 999px; padding: 7px 11px; font-size: 11px; font-weight: 800; }
+.anonymous-add-intro { max-width: 760px; margin: 42px auto 26px; }
+.anonymous-add-intro h1, .anonymous-success h1 { margin: 0; font: 700 clamp(44px,8vw,70px)/.96 Georgia, serif; letter-spacing: -.05em; }
+.anonymous-add-intro > p:last-child, .anonymous-success > p:not(.eyebrow) { max-width: 520px; color: var(--muted); line-height: 1.55; margin: 18px 0 0; }
+.anonymous-add-card { width: min(760px,100%); margin: 0 auto; background: var(--paper); border: 1px solid rgba(47,89,70,.08); border-radius: 26px; padding: 26px; box-shadow: var(--shadow); }
+.anonymous-add-shell.success { display: grid; place-items: center; padding: 24px; }
+.anonymous-success { width: min(560px,100%); background: var(--paper); border-radius: 28px; padding: 46px; box-shadow: var(--shadow); text-align: center; }
+.anonymous-success > p { margin-inline: auto !important; }
+.anonymous-success .primary-button { margin-top: 28px; }
+.success-mark { width: 58px; height: 58px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 50%; background: var(--sage); color: white; font-size: 28px; font-weight: 900; }
 
 .onboarding, .state-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; position: relative; overflow: hidden; }
 .onboarding::before, .state-screen::before { content: ""; position: fixed; width: 430px; height: 430px; border-radius: 50%; background: var(--sage-soft); top: -220px; right: -120px; }
@@ -225,10 +244,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .dialog-actions.split { gap: 8px; }
   .dialog-actions.split > * { flex: 1; }
   .invite-form { grid-template-columns: 1fr; }
+  .share-add-panel { grid-template-columns: 1fr; }
+  .share-add-panel .secondary-button { width: 100%; }
+  .share-link-field { grid-column: auto; }
   .member-row { grid-template-columns: auto minmax(0,1fr) auto; }
   .member-row .icon-button { grid-column: 3; }
   .role-pill { display: none; }
   .onboarding-card { padding: 34px 24px; border-radius: 22px; }
+  .anonymous-add-shell { padding: 10px 14px 40px; }
+  .anonymous-add-header { min-height: 56px; }
+  .anonymous-add-intro { margin: 30px auto 22px; padding: 0 5px; }
+  .anonymous-add-intro h1 { font-size: clamp(43px,13vw,58px); }
+  .anonymous-add-card { padding: 20px 16px calc(22px + env(safe-area-inset-bottom)); border-radius: 22px; }
+  .anonymous-add-card .photo-input { min-height: 190px; }
+  .anonymous-success { padding: 38px 22px; border-radius: 22px; }
+  .anonymous-success h1 { font-size: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

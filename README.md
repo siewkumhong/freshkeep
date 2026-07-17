@@ -26,10 +26,17 @@ The development login defaults to `owner@freshkeep.local`. D1 and R2 bindings ar
 | `OPENROUTER_API_KEY` | OpenRouter secret key | none |
 | `OPENROUTER_MODEL` | OpenRouter vision model | `qwen/qwen3-vl-30b-a3b-instruct` |
 | `APP_URL` | Public site origin, sent as OpenRouter's optional referrer | none |
+| `ANONYMOUS_UPLOAD_SECRET` | Stable signing secret for private no-login add links | none |
 
 Both providers receive the same prompt, two images, and strict output schema. OpenRouter requests require parameter support and zero-data-retention routing, use temperature 0, and cap output at 300 tokens. FreshKeep makes one request only: there are no automatic retries, response healing, free-model routing, or cross-provider fallback.
 
 The shared validator accepts only real ISO dates. Ambiguous, unreadable, invalid, missing, or multiple dates are cleared and require manual entry. Human confirmation is always required. The date-label photo is never persisted.
+
+## No-login household add link
+
+The household owner can retrieve the permanent private link from the Household panel. The link opens `/add` directly, requires no account, and permits only photo analysis and confirmed item creation. Inventory data, stored photos, editing, deletion, and membership stay signed-in.
+
+Keep `ANONYMOUS_UPLOAD_SECRET` unchanged across deployments so the link remains identical. Use a random value of at least 32 characters and rotate it only if the link is exposed. Anonymous requests are limited to 50 analyses and 50 saves per household per Singapore calendar day.
 
 ### Switch to OpenRouter
 

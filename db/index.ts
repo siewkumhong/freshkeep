@@ -8,6 +8,7 @@ export type FreshKeepEnv = {
   VISION_PROVIDER?: string;
   OPENROUTER_API_KEY?: string;
   OPENROUTER_MODEL?: string;
+  ANONYMOUS_UPLOAD_SECRET?: string;
   RESEND_API_KEY?: string;
   REMINDER_FROM?: string;
   REMINDER_CRON_SECRET?: string;

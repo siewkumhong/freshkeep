@@ -1,5 +1,10 @@
 import { getEnv } from "@/db";
-import { apiError, requireMembership } from "@/lib/server";
+import {
+  consumeAnonymousQuota,
+  requireSameOrigin,
+  requireUploadAccess,
+} from "@/lib/contribution";
+import { apiError } from "@/lib/server";
 import {
   analyzeVisionImages,
   DEFAULT_OPENAI_MODEL,
@@ -13,7 +18,8 @@ const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
 export async function POST(request: Request) {
   try {
-    await requireMembership();
+    requireSameOrigin(request);
+    const access = await requireUploadAccess(request);
     const form = await request.formData();
     const itemPhoto = form.get("itemPhoto");
     const datePhoto = form.get("datePhoto");
@@ -29,6 +35,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    await consumeAnonymousQuota(access, "analysis");
 
     const env = getEnv();
     const [itemImage, dateImage] = await Promise.all([
