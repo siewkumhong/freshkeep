@@ -11,10 +11,10 @@ export function isIsoDate(value: string): boolean {
   );
 }
 
-export function subtractCalendarMonth(value: string): string {
+export function subtractTwoCalendarMonths(value: string): string {
   if (!isIsoDate(value)) throw new Error("A valid date is required.");
   const [year, month, day] = value.split("-").map(Number);
-  const targetMonthIndex = month - 2;
+  const targetMonthIndex = month - 3;
   const targetYear = targetMonthIndex < 0 ? year - 1 : year;
   const normalizedMonthIndex = (targetMonthIndex + 12) % 12;
   const lastDay = new Date(

@@ -1,6 +1,6 @@
 # FreshKeep
 
-FreshKeep is a mobile-first shared pantry and fridge tracker. A household member photographs an item and its date label, confirms the extracted details, and receives a reminder digest one calendar month before the date.
+FreshKeep is a mobile-first shared pantry and fridge tracker. A household member photographs an item and its date label, confirms the extracted details, and receives a reminder digest two calendar months before the date.
 
 ## Local development
 

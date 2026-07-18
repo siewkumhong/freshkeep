@@ -15,6 +15,13 @@
       "when": 1784257187421,
       "tag": "0001_mysterious_changeling",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784390843857,
+      "tag": "0002_reminder_two_months",
+      "breakpoints": true
     }
   ]
 }

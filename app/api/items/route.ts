@@ -1,5 +1,5 @@
 import { getDatabase, getPhotoBucket } from "@/db";
-import { isIsoDate, subtractCalendarMonth } from "@/lib/date";
+import { isIsoDate, subtractTwoCalendarMonths } from "@/lib/date";
 import {
   consumeAnonymousQuota,
   requireSameOrigin,
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
           location,
           dateType,
           itemDate,
-          subtractCalendarMonth(itemDate),
+          subtractTwoCalendarMonths(itemDate),
           notes,
           photoKey,
           photo.type,

@@ -1,5 +1,5 @@
 import { getDatabase, getPhotoBucket } from "@/db";
-import { isIsoDate, subtractCalendarMonth } from "@/lib/date";
+import { isIsoDate, subtractTwoCalendarMonths } from "@/lib/date";
 import { apiError, requireMembership } from "@/lib/server";
 
 const STATUSES = new Set(["active", "used", "discarded"]);
@@ -49,7 +49,7 @@ export async function PATCH(
              reminder_on = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
       )
-      .bind(name, quantity, location, dateType, itemDate, subtractCalendarMonth(itemDate), notes, id)
+      .bind(name, quantity, location, dateType, itemDate, subtractTwoCalendarMonths(itemDate), notes, id)
       .run();
     return Response.json({ ok: true });
   } catch (error) {
