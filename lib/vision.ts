@@ -2,6 +2,7 @@ import { isIsoDate } from "./date.ts";
 
 export const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
 export const DEFAULT_OPENROUTER_MODEL = "qwen/qwen3-vl-30b-a3b-instruct";
+export const OPENROUTER_PROVIDER_ENDPOINT = "novita/bf16";
 
 export type VisionProvider = "openai" | "openrouter";
 
@@ -12,6 +13,18 @@ export type ScanResult = {
   rawDateText: string | null;
   dateStatus: "confident" | "ambiguous" | "unreadable";
   warnings: string[];
+};
+
+export type VisionUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cost?: number;
+};
+
+export type VisionAnalysis = {
+  result: ScanResult;
+  usage: VisionUsage;
 };
 
 type VisionEnvironment = {
@@ -38,9 +51,13 @@ export const EXTRACTION_PROMPT = `You extract one household perishable item from
 Accuracy rules:
 - Identify a short, useful item name only from IMAGE 1 — ITEM FRONT.
 - Read a date only from visible text in IMAGE 2 — DATE LABEL. Never infer shelf life or repair incomplete text.
+- Inspect the entire date-label photo for every complete date before selecting one.
 - Return the date as YYYY-MM-DD only when the year, month, and day are unambiguous.
-- Singapore commonly uses day/month/year. If a numeric date could also be month/day/year and surrounding text does not resolve it, mark it ambiguous and return null.
-- If more than one complete date appears, mark the result ambiguous and return null.
+- A date beginning with a four-digit year, such as 2027-09-29, is always year-month-day; if calendar-valid, return it and do not mark it ambiguous.
+- Map EXP or EXPIRY to expiry, BEST BEFORE to best_before, and USE BY to use_by. Otherwise use unknown.
+- Singapore commonly uses day/month/year. Only dates beginning with one- or two-digit components can be day/month versus month/day ambiguous. If surrounding text does not resolve that ambiguity, return null.
+- Count every complete calendar date, including packed, made, manufactured, sell-by, and expiry dates. Set multipleDatesVisible true whenever two or more appear.
+- If more than one complete date appears, put every visible date string in rawDateText separated by " | ", add a warning, mark the result ambiguous, and return null.
 - If the date is missing, invalid, blurred, obscured, or incomplete, return null and mark it ambiguous or unreadable.
 - Preserve the exact visible date string in rawDateText when possible.
 - Use warnings for anything the person should verify. Human confirmation is always required.`;
@@ -56,6 +73,7 @@ export const SCAN_SCHEMA = {
       enum: ["expiry", "best_before", "use_by", "unknown"],
     },
     rawDateText: { type: ["string", "null"] },
+    multipleDatesVisible: { type: "boolean" },
     dateStatus: {
       type: "string",
       enum: ["confident", "ambiguous", "unreadable"],
@@ -67,6 +85,7 @@ export const SCAN_SCHEMA = {
     "date",
     "dateType",
     "rawDateText",
+    "multipleDatesVisible",
     "dateStatus",
     "warnings",
   ],
@@ -157,8 +176,11 @@ export function buildOpenRouterRequest(
       },
     },
     temperature: 0,
+    seed: 0,
     max_tokens: 300,
     provider: {
+      order: [OPENROUTER_PROVIDER_ENDPOINT],
+      allow_fallbacks: false,
       require_parameters: true,
       zdr: true,
     },
@@ -171,6 +193,15 @@ export async function analyzeVisionImages(
   dateImage: string,
   fetcher: typeof fetch = fetch,
 ): Promise<ScanResult> {
+  return (await analyzeVisionImagesWithUsage(config, itemImage, dateImage, fetcher)).result;
+}
+
+export async function analyzeVisionImagesWithUsage(
+  config: VisionConfig,
+  itemImage: string,
+  dateImage: string,
+  fetcher: typeof fetch = fetch,
+): Promise<VisionAnalysis> {
   const isOpenAI = config.provider === "openai";
   const response = await callProvider(
     fetcher,
@@ -201,7 +232,10 @@ export async function analyzeVisionImages(
   }
 
   try {
-    return normalizeScanResult(JSON.parse(outputText));
+    return {
+      result: normalizeScanResult(JSON.parse(outputText)),
+      usage: extractUsage(payload, isOpenAI),
+    };
   } catch {
     throw new VisionProviderError("The selected photo reader returned an invalid result.");
   }
@@ -213,6 +247,10 @@ export function normalizeScanResult(value: unknown): ScanResult {
   const itemName = requiredString(value.itemName, "itemName").trim().slice(0, 100);
   const date = nullableString(value.date, "date");
   const rawDateText = nullableString(value.rawDateText, "rawDateText");
+  const multipleDatesVisible = requiredBoolean(
+    value.multipleDatesVisible,
+    "multipleDatesVisible",
+  );
   const dateType = enumValue(
     value.dateType,
     ["expiry", "best_before", "use_by", "unknown"] as const,
@@ -228,6 +266,7 @@ export function normalizeScanResult(value: unknown): ScanResult {
   }
   const warnings = value.warnings.map((warning) => warning.trim()).filter(Boolean);
   const hasMultipleDates =
+    multipleDatesVisible ||
     containsMultipleDateCandidates(rawDateText) ||
     warnings.some((warning) => /\b(multiple|several|more than one)\b/i.test(warning));
   const hasAmbiguousNumericDate = containsAmbiguousNumericDate(rawDateText);
@@ -321,6 +360,36 @@ function extractOpenRouterOutputText(payload: Record<string, unknown>): string |
   return typeof first.message.content === "string" ? first.message.content : null;
 }
 
+function extractUsage(
+  payload: Record<string, unknown>,
+  isOpenAI: boolean,
+): VisionUsage {
+  if (!isRecord(payload.usage)) return {};
+  const usage = payload.usage;
+  return compactUsage({
+    inputTokens: numericUsage(
+      isOpenAI ? usage.input_tokens : usage.prompt_tokens,
+    ),
+    outputTokens: numericUsage(
+      isOpenAI ? usage.output_tokens : usage.completion_tokens,
+    ),
+    totalTokens: numericUsage(usage.total_tokens),
+    cost: isOpenAI ? undefined : numericUsage(usage.cost),
+  });
+}
+
+function numericUsage(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function compactUsage(usage: VisionUsage): VisionUsage {
+  return Object.fromEntries(
+    Object.entries(usage).filter((entry) => entry[1] !== undefined),
+  ) as VisionUsage;
+}
+
 function containsMultipleDateCandidates(value: string | null): boolean {
   if (!value) return false;
   const matches = value.match(
@@ -348,6 +417,11 @@ function requiredString(value: unknown, field: string): string {
 function nullableString(value: unknown, field: string): string | null {
   if (value === null) return null;
   return requiredString(value, field);
+}
+
+function requiredBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${field} must be a boolean.`);
+  return value;
 }
 
 function enumValue<const Values extends readonly string[]>(

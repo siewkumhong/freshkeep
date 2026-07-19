@@ -6,10 +6,11 @@ import {
 } from "@/lib/contribution";
 import { apiError } from "@/lib/server";
 import {
-  analyzeVisionImages,
+  analyzeVisionImagesWithUsage,
   DEFAULT_OPENAI_MODEL,
   DEFAULT_OPENROUTER_MODEL,
   resolveVisionConfig,
+  type VisionUsage,
   VisionConfigurationError,
 } from "@/lib/vision";
 
@@ -50,11 +51,23 @@ export async function POST(request: Request) {
         : env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
     try {
       const config = resolveVisionConfig(env);
-      const result = await analyzeVisionImages(config, itemImage, dateImage);
-      logAnalysis(config.provider, config.model, startedAt, "success");
+      const analysis = await analyzeVisionImagesWithUsage(
+        config,
+        itemImage,
+        dateImage,
+      );
+      logAnalysis(config.provider, config.model, startedAt, "success", {
+        itemBytes: itemPhoto.size,
+        dateBytes: datePhoto.size,
+        usage: analysis.usage,
+      });
+      const result = analysis.result;
       return Response.json({ result });
     } catch (error) {
-      logAnalysis(selectedProvider, selectedModel, startedAt, "failure");
+      logAnalysis(selectedProvider, selectedModel, startedAt, "failure", {
+        itemBytes: itemPhoto.size,
+        dateBytes: datePhoto.size,
+      });
       const status = error instanceof VisionConfigurationError ? 503 : 502;
       return Response.json(
         { error: "The photos could not be read safely. Enter the details manually." },
@@ -81,6 +94,11 @@ function logAnalysis(
   model: string,
   startedAt: number,
   outcome: "success" | "failure",
+  metrics: {
+    itemBytes: number;
+    dateBytes: number;
+    usage?: VisionUsage;
+  },
 ) {
   console.info(
     JSON.stringify({
@@ -88,6 +106,9 @@ function logAnalysis(
       model,
       latencyMs: Date.now() - startedAt,
       outcome,
+      itemBytes: metrics.itemBytes,
+      dateBytes: metrics.dateBytes,
+      ...metrics.usage,
     }),
   );
 }

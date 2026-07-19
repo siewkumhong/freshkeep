@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   analyzeVisionImages,
+  analyzeVisionImagesWithUsage,
   buildOpenAIRequest,
   buildOpenRouterRequest,
   DEFAULT_OPENAI_MODEL,
@@ -14,13 +15,22 @@ import {
 
 const ITEM_IMAGE = "data:image/jpeg;base64,aXRlbQ==";
 const DATE_IMAGE = "data:image/jpeg;base64,ZGF0ZQ==";
-const VALID_RESULT = {
+const PROVIDER_RESULT = {
   itemName: "Fresh milk",
   date: "2026-12-31",
   dateType: "expiry",
   rawDateText: "EXP 31/12/2026",
+  multipleDatesVisible: false,
   dateStatus: "confident",
   warnings: [],
+};
+const VALID_RESULT = {
+  itemName: PROVIDER_RESULT.itemName,
+  date: PROVIDER_RESULT.date,
+  dateType: PROVIDER_RESULT.dateType,
+  rawDateText: PROVIDER_RESULT.rawDateText,
+  dateStatus: PROVIDER_RESULT.dateStatus,
+  warnings: PROVIDER_RESULT.warnings,
 };
 
 test("selects OpenAI by default and OpenRouter only when configured", () => {
@@ -73,24 +83,31 @@ test("builds one constrained OpenRouter request with explicitly labelled images"
   assert.equal(body.response_format.type, "json_schema");
   assert.equal(body.response_format.json_schema.strict, true);
   assert.equal(body.temperature, 0);
+  assert.equal(body.seed, 0);
   assert.equal(body.max_tokens, 300);
-  assert.deepEqual(body.provider, { require_parameters: true, zdr: true });
+  assert.deepEqual(body.provider, {
+    order: ["novita/bf16"],
+    allow_fallbacks: false,
+    require_parameters: true,
+    zdr: true,
+  });
 });
 
 test("accepts only complete, valid, confident ISO dates", () => {
-  assert.deepEqual(normalizeScanResult(VALID_RESULT), VALID_RESULT);
+  assert.deepEqual(normalizeScanResult(PROVIDER_RESULT), VALID_RESULT);
 
   for (const unsafe of [
-    { ...VALID_RESULT, date: "2026-02-29" },
-    { ...VALID_RESULT, date: "31/12/2026" },
-    { ...VALID_RESULT, date: null },
-    { ...VALID_RESULT, dateStatus: "ambiguous" },
-    { ...VALID_RESULT, dateStatus: "unreadable" },
-    { ...VALID_RESULT, date: "2027-04-03", rawDateText: "EXP 03/04/2027" },
+    { ...PROVIDER_RESULT, date: "2026-02-29" },
+    { ...PROVIDER_RESULT, date: "31/12/2026" },
+    { ...PROVIDER_RESULT, date: null },
+    { ...PROVIDER_RESULT, dateStatus: "ambiguous" },
+    { ...PROVIDER_RESULT, dateStatus: "unreadable" },
+    { ...PROVIDER_RESULT, date: "2027-04-03", rawDateText: "EXP 03/04/2027" },
     {
-      ...VALID_RESULT,
+      ...PROVIDER_RESULT,
       rawDateText: "PACKED 01/11/2026 EXP 31/12/2026",
     },
+    { ...PROVIDER_RESULT, multipleDatesVisible: true },
   ]) {
     const result = normalizeScanResult(unsafe);
     assert.equal(result.date, null);
@@ -100,11 +117,11 @@ test("accepts only complete, valid, confident ISO dates", () => {
 });
 
 test("rejects malformed fields and enums instead of repairing them", () => {
-  assert.throws(() => normalizeScanResult({ ...VALID_RESULT, warnings: "check" }));
-  assert.throws(() => normalizeScanResult({ ...VALID_RESULT, dateType: "sell_by" }));
-  assert.throws(() => normalizeScanResult({ ...VALID_RESULT, dateStatus: "certain" }));
-  assert.throws(() => normalizeScanResult({ ...VALID_RESULT, rawDateText: 123 }));
-  const missingKey = { ...VALID_RESULT };
+  assert.throws(() => normalizeScanResult({ ...PROVIDER_RESULT, warnings: "check" }));
+  assert.throws(() => normalizeScanResult({ ...PROVIDER_RESULT, dateType: "sell_by" }));
+  assert.throws(() => normalizeScanResult({ ...PROVIDER_RESULT, dateStatus: "certain" }));
+  assert.throws(() => normalizeScanResult({ ...PROVIDER_RESULT, rawDateText: 123 }));
+  const missingKey = { ...PROVIDER_RESULT };
   delete missingKey.itemName;
   assert.throws(() => normalizeScanResult(missingKey));
 });
@@ -113,7 +130,7 @@ test("parses OpenRouter structured output and sends the expected headers", async
   let request;
   const fetcher = async (url, init) => {
     request = { url, init };
-    return Response.json({ choices: [{ message: { content: JSON.stringify(VALID_RESULT) } }] });
+    return Response.json({ choices: [{ message: { content: JSON.stringify(PROVIDER_RESULT) } }] });
   };
   const result = await analyzeVisionImages(
     {
@@ -130,6 +147,52 @@ test("parses OpenRouter structured output and sends the expected headers", async
   assert.equal(request.url, "https://openrouter.ai/api/v1/chat/completions");
   assert.equal(request.init.headers.Authorization, "Bearer secret-key");
   assert.equal(request.init.headers["HTTP-Referer"], "https://freshkeep.example");
+});
+
+test("returns sanitized provider usage without changing the public scan result", async () => {
+  const analysis = await analyzeVisionImagesWithUsage(
+    {
+      provider: "openrouter",
+      apiKey: "secret-key",
+      model: DEFAULT_OPENROUTER_MODEL,
+    },
+    ITEM_IMAGE,
+    DATE_IMAGE,
+    async () =>
+      Response.json({
+        choices: [{ message: { content: JSON.stringify(PROVIDER_RESULT) } }],
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 80,
+          total_tokens: 1280,
+          cost: 0.0002,
+          ignored: "private provider detail",
+        },
+      }),
+  );
+  assert.deepEqual(analysis.result, VALID_RESULT);
+  assert.deepEqual(analysis.usage, {
+    inputTokens: 1200,
+    outputTokens: 80,
+    totalTokens: 1280,
+    cost: 0.0002,
+  });
+
+  const openai = await analyzeVisionImagesWithUsage(
+    { provider: "openai", apiKey: "secret-key", model: DEFAULT_OPENAI_MODEL },
+    ITEM_IMAGE,
+    DATE_IMAGE,
+    async () =>
+      Response.json({
+        output_text: JSON.stringify(PROVIDER_RESULT),
+        usage: { input_tokens: 900, output_tokens: 70, total_tokens: 970 },
+      }),
+  );
+  assert.deepEqual(openai.usage, {
+    inputTokens: 900,
+    outputTokens: 70,
+    totalTokens: 970,
+  });
 });
 
 test("rate limits, provider failures, and malformed JSON fail once into manual fallback", async () => {

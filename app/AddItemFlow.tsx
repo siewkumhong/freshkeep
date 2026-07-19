@@ -7,6 +7,12 @@ import {
   type FormEvent,
   type RefObject,
 } from "react";
+import {
+  EFFICIENT_IMAGE_LIMITS,
+  fittedImageDimensions,
+  JPEG_QUALITY,
+  type ImageRole,
+} from "@/lib/image-profile";
 
 export type DateType = "expiry" | "best_before" | "use_by" | "unknown";
 
@@ -54,8 +60,15 @@ export function AddItemFlow({
   const [form, setForm] = useState<ItemForm>(EMPTY_FORM);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState({ item: false, date: false });
   const [error, setError] = useState("");
   const dateRef = useRef<HTMLInputElement>(null);
+  const selectionVersions = useRef({ item: 0, date: 0 });
+  const lastAnalysis = useRef<{
+    itemPhoto: File;
+    datePhoto: File;
+    result: ScanResult;
+  } | null>(null);
 
   useEffect(() => {
     if (step !== "confirm" || scan?.dateStatus === "confident") return;
@@ -70,6 +83,22 @@ export function AddItemFlow({
     onStepChange?.("confirm");
   }
 
+  async function selectPhoto(role: ImageRole, file: File) {
+    const version = ++selectionVersions.current[role];
+    setPreparing((current) => ({ ...current, [role]: true }));
+    setError("");
+    const prepared = await prepareImage(
+      file,
+      EFFICIENT_IMAGE_LIMITS[role],
+      `freshkeep-${role}.jpg`,
+    );
+    if (selectionVersions.current[role] !== version) return;
+    if (role === "item") setItemPhoto(prepared);
+    else setDatePhoto(prepared);
+    lastAnalysis.current = null;
+    setPreparing((current) => ({ ...current, [role]: false }));
+  }
+
   async function analyze() {
     if (!itemPhoto || !datePhoto) {
       setError("Take both photos before continuing.");
@@ -77,15 +106,15 @@ export function AddItemFlow({
     }
     setBusy(true);
     setError("");
-    const [preparedItem, preparedDate] = await Promise.all([
-      prepareImage(itemPhoto),
-      prepareImage(datePhoto),
-    ]);
-    setItemPhoto(preparedItem);
-    setDatePhoto(preparedDate);
+    const cached = lastAnalysis.current;
+    if (cached?.itemPhoto === itemPhoto && cached.datePhoto === datePhoto) {
+      showConfirmation(cached.result, formFromScan(cached.result));
+      setBusy(false);
+      return;
+    }
     const body = new FormData();
-    body.set("itemPhoto", preparedItem);
-    body.set("datePhoto", preparedDate);
+    body.set("itemPhoto", itemPhoto);
+    body.set("datePhoto", datePhoto);
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -97,12 +126,8 @@ export function AddItemFlow({
         throw new Error(payload.error ?? "The photos could not be read.");
       }
       const result = payload.result as ScanResult;
-      showConfirmation(result, {
-        ...EMPTY_FORM,
-        name: result.itemName,
-        itemDate: result.date ?? "",
-        dateType: result.dateType,
-      });
+      lastAnalysis.current = { itemPhoto, datePhoto, result };
+      showConfirmation(result, formFromScan(result));
     } catch (reason) {
       showConfirmation(
         {
@@ -183,13 +208,13 @@ export function AddItemFlow({
             label="1. Item photo"
             hint="Show the front of the package"
             file={itemPhoto}
-            onFile={setItemPhoto}
+            onFile={(file) => void selectPhoto("item", file)}
           />
           <PhotoInput
             label="2. Date photo"
             hint="Fill the frame with the printed date"
             file={datePhoto}
-            onFile={setDatePhoto}
+            onFile={(file) => void selectPhoto("date", file)}
           />
         </div>
         {error && <p className="form-error">{error}</p>}
@@ -197,16 +222,22 @@ export function AddItemFlow({
           <button
             className="secondary-button"
             onClick={enterManually}
-            disabled={!itemPhoto}
+            disabled={!itemPhoto || preparing.item}
           >
-            Enter date manually
+            Enter details manually
           </button>
           <button
             className="primary-button"
             onClick={analyze}
-            disabled={busy || !itemPhoto || !datePhoto}
+            disabled={
+              busy || preparing.item || preparing.date || !itemPhoto || !datePhoto
+            }
           >
-            {busy ? "Reading photos…" : "Read photos"}
+            {preparing.item || preparing.date
+              ? "Preparing photos…"
+              : busy
+                ? "Reading photos…"
+                : "Read photos"}
           </button>
         </div>
         <p className="privacy-note">The date photo is read once and never saved.</p>
@@ -372,24 +403,39 @@ function PhotoInput({
   );
 }
 
-async function prepareImage(file: File): Promise<File> {
+function formFromScan(result: ScanResult): ItemForm {
+  return {
+    ...EMPTY_FORM,
+    name: result.itemName,
+    itemDate: result.date ?? "",
+    dateType: result.dateType,
+  };
+}
+
+async function prepareImage(
+  file: File,
+  maxEdge: number,
+  filename: string,
+): Promise<File> {
+  let bitmap: ImageBitmap | null = null;
   try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
+    bitmap = await createImageBitmap(file);
+    const dimensions = fittedImageDimensions(bitmap.width, bitmap.height, maxEdge);
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
+    canvas.width = dimensions.width;
+    canvas.height = dimensions.height;
     const context = canvas.getContext("2d");
     if (!context) return file;
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.86),
+      canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY),
     );
     return blob
-      ? new File([blob], "freshkeep-photo.jpg", { type: "image/jpeg" })
+      ? new File([blob], filename, { type: "image/jpeg" })
       : file;
   } catch {
     return file;
+  } finally {
+    bitmap?.close();
   }
 }

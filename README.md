@@ -28,7 +28,9 @@ The development login defaults to `owner@freshkeep.local`. D1 and R2 bindings ar
 | `APP_URL` | Public site origin, sent as OpenRouter's optional referrer | none |
 | `ANONYMOUS_UPLOAD_SECRET` | Stable signing secret for private no-login add links | none |
 
-Both providers receive the same prompt, two images, and strict output schema. OpenRouter requests require parameter support and zero-data-retention routing, use temperature 0, and cap output at 300 tokens. FreshKeep makes one request only: there are no automatic retries, response healing, free-model routing, or cross-provider fallback.
+Both providers receive the same prompt, two images, and strict output schema. OpenRouter requests pin the ZDR-compatible `novita/bf16` endpoint, require parameter support, use temperature 0 with seed 0, and cap output at 300 tokens. FreshKeep makes one request only: there are no automatic retries, response healing, free-model routing, or cross-provider fallback.
+
+The browser prepares each photo once before upload: item photos use a 1,024-pixel longest edge, date-label photos use 1,408 pixels, and both use JPEG quality 0.86. Returning to unchanged photos reuses the prior in-memory analysis instead of spending another model request. Server logs may include provider-reported token counts, cost, byte sizes, latency, model, and outcome, but never photos or extracted fields.
 
 The shared validator accepts only real ISO dates. Ambiguous, unreadable, invalid, missing, or multiple dates are cleared and require manual entry. Human confirmation is always required. The date-label photo is never persisted.
 
@@ -70,4 +72,4 @@ npm test
 
 `npm test` builds the production worker and runs the date, provider-contract, safety, and product-shell tests. Before selecting OpenRouter in production, also complete the paired-photo evaluation and a real-device two-photo smoke test.
 
-Run the paired-photo gate with `npm run test:vision-live` after adding the local photo pairs described in `tests/fixtures/vision/README.md`. The committed manifest fixes the required 16 scenarios and expected safe outcomes; the photos themselves stay local.
+Run the synthetic paired-photo gate with `npm run test:vision-live` after setting both provider keys in `.env`. The evaluator generates all 16 high-resolution fixtures in memory, sends each optimized pair once to each provider, and makes one additional baseline request per provider for token comparison. It never prints fixture text or model-extracted fields.
