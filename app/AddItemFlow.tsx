@@ -61,9 +61,14 @@ export function AddItemFlow({
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [preparing, setPreparing] = useState({ item: false, date: false });
+  const [previewUrls, setPreviewUrls] = useState<Record<ImageRole, string>>({
+    item: "",
+    date: "",
+  });
   const [error, setError] = useState("");
   const dateRef = useRef<HTMLInputElement>(null);
   const selectionVersions = useRef({ item: 0, date: 0 });
+  const previewUrlsRef = useRef<Record<ImageRole, string>>({ item: "", date: "" });
   const lastAnalysis = useRef<{
     itemPhoto: File;
     datePhoto: File;
@@ -76,6 +81,17 @@ export function AddItemFlow({
     return () => clearTimeout(timer);
   }, [scan, step]);
 
+  useEffect(
+    () => () => {
+      selectionVersions.current.item += 1;
+      selectionVersions.current.date += 1;
+      Object.values(previewUrlsRef.current).forEach((previewUrl) => {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+      });
+    },
+    [],
+  );
+
   function showConfirmation(result: ScanResult, nextForm: ItemForm) {
     setScan(result);
     setForm(nextForm);
@@ -85,6 +101,13 @@ export function AddItemFlow({
 
   async function selectPhoto(role: ImageRole, file: File) {
     const version = ++selectionVersions.current[role];
+    const previousPreview = previewUrlsRef.current[role];
+    if (previousPreview) URL.revokeObjectURL(previousPreview);
+    previewUrlsRef.current[role] = "";
+    setPreviewUrls((current) => ({ ...current, [role]: "" }));
+    if (role === "item") setItemPhoto(null);
+    else setDatePhoto(null);
+    lastAnalysis.current = null;
     setPreparing((current) => ({ ...current, [role]: true }));
     setError("");
     const prepared = await prepareImage(
@@ -93,9 +116,20 @@ export function AddItemFlow({
       `freshkeep-${role}.jpg`,
     );
     if (selectionVersions.current[role] !== version) return;
+    if (!prepared) {
+      setError(
+        role === "date"
+          ? "The date photo could not be prepared. Try a smaller or cropped photo, or enter the details manually."
+          : "The item photo could not be prepared. Try a smaller or cropped photo.",
+      );
+      setPreparing((current) => ({ ...current, [role]: false }));
+      return;
+    }
+    const previewUrl = URL.createObjectURL(prepared);
+    previewUrlsRef.current[role] = previewUrl;
+    setPreviewUrls((current) => ({ ...current, [role]: previewUrl }));
     if (role === "item") setItemPhoto(prepared);
     else setDatePhoto(prepared);
-    lastAnalysis.current = null;
     setPreparing((current) => ({ ...current, [role]: false }));
   }
 
@@ -208,12 +242,16 @@ export function AddItemFlow({
             label="1. Item photo"
             hint="Show the front of the package"
             file={itemPhoto}
+            previewUrl={previewUrls.item}
+            preparing={preparing.item}
             onFile={(file) => void selectPhoto("item", file)}
           />
           <PhotoInput
             label="2. Date photo"
             hint="Fill the frame with the printed date"
             file={datePhoto}
+            previewUrl={previewUrls.date}
+            preparing={preparing.date}
             onFile={(file) => void selectPhoto("date", file)}
           />
         </div>
@@ -361,41 +399,35 @@ function PhotoInput({
   label,
   hint,
   file,
+  previewUrl,
+  preparing,
   onFile,
 }: {
   label: string;
   hint: string;
   file: File | null;
+  previewUrl: string;
+  preparing: boolean;
   onFile: (file: File) => void;
 }) {
-  const [preview, setPreview] = useState("");
-  const previewRef = useRef("");
-  useEffect(
-    () => () => {
-      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-    },
-    [],
-  );
   return (
     <label className={`photo-input ${file ? "has-photo" : ""}`}>
-      {preview ? (
+      {previewUrl ? (
         // Blob previews cannot use the server image optimizer.
-        <img src={preview} alt="Selected preview" />
+        <img src={previewUrl} alt={`${label} preview`} />
       ) : (
         <span className="camera-mark" aria-hidden="true">◎</span>
       )}
-      <strong>{file ? "Retake photo" : label}</strong>
-      <small>{file ? file.name : hint}</small>
+      <strong>{preparing ? "Preparing photo…" : file ? "Retake photo" : label}</strong>
+      <small>{preparing ? "Creating a smaller preview…" : file ? file.name : hint}</small>
       <input
         type="file"
         accept="image/jpeg,image/png,image/webp"
         capture="environment"
         onChange={(event) => {
-          const selected = event.target.files?.[0];
+          const selected = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
           if (!selected) return;
-          if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-          previewRef.current = URL.createObjectURL(selected);
-          setPreview(previewRef.current);
           onFile(selected);
         }}
       />
@@ -416,26 +448,31 @@ async function prepareImage(
   file: File,
   maxEdge: number,
   filename: string,
-): Promise<File> {
+): Promise<File | null> {
   let bitmap: ImageBitmap | null = null;
+  let canvas: HTMLCanvasElement | null = null;
   try {
     bitmap = await createImageBitmap(file);
     const dimensions = fittedImageDimensions(bitmap.width, bitmap.height, maxEdge);
-    const canvas = document.createElement("canvas");
+    canvas = document.createElement("canvas");
     canvas.width = dimensions.width;
     canvas.height = dimensions.height;
     const context = canvas.getContext("2d");
-    if (!context) return file;
+    if (!context) return null;
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY),
     );
     return blob
       ? new File([blob], filename, { type: "image/jpeg" })
-      : file;
+      : null;
   } catch {
-    return file;
+    return null;
   } finally {
     bitmap?.close();
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
   }
 }

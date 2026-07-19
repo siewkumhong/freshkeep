@@ -28,6 +28,16 @@ test("ships the FreshKeep product shell without starter metadata", async () => {
   assert.doesNotMatch(`${page}${layout}${packageJson}`, /codex-preview|react-loading-skeleton/i);
 });
 
+test("previews only prepared photos and never falls back to originals", async () => {
+  const addFlow = await readFile(new URL("app/AddItemFlow.tsx", root), "utf8");
+  assert.doesNotMatch(addFlow, /URL\.createObjectURL\(selected\)/);
+  assert.match(addFlow, /URL\.createObjectURL\(prepared\)/);
+  assert.match(addFlow, /Promise<File \| null>/);
+  assert.match(addFlow, /URL\.revokeObjectURL/);
+  assert.match(addFlow, /selectionVersions\.current\[role\] !== version/);
+  assert.doesNotMatch(addFlow, /catch\s*\{\s*return file;\s*\}/);
+});
+
 test("includes durable schema and reminder de-duplication", async () => {
   const [schema, migration, reminderRoute] = await Promise.all([
     readFile(new URL("db/schema.ts", root), "utf8"),
