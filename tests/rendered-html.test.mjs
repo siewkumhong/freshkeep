@@ -22,6 +22,7 @@ test("ships the FreshKeep product shell without starter metadata", async () => {
   assert.match(addFlow, /Enter details manually/);
   assert.match(addFlow, /lastAnalysis\.current/);
   assert.match(addFlow, /EFFICIENT_IMAGE_LIMITS/);
+  assert.match(addFlow, /location:\s*"pantry"/);
   assert.match(anonymousAdd, /No account needed/);
   assert.match(client, /Expiring Soon|Use soon/);
   assert.match(css, /--sage:\s*#2f5946/);

@@ -38,7 +38,7 @@ const EMPTY_FORM: ItemForm = {
   name: "",
   itemDate: "",
   dateType: "unknown",
-  location: "fridge",
+  location: "pantry",
   quantity: 1,
   notes: "",
 };
